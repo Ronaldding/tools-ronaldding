@@ -1,4 +1,13 @@
-import { Router } from 'itty-router';
+
+/**
+ * LLM Chat Application Template
+ *
+ * A simple chat application using Cloudflare Workers AI.
+ * This template demonstrates how to implement an LLM-powered chat interface with
+ * streaming responses using Server-Sent Events (SSE).
+ *
+ * @license MIT
+ */
 import { Env, ChatMessage } from "./types";
 
 // Model ID for Workers AI model
@@ -9,41 +18,52 @@ const MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const SYSTEM_PROMPT =
   "You are a helpful, friendly assistant. Provide concise and accurate responses.";
 
-// Create router
-const router = Router<Env>();
+export default {
+  /**
+   * Main request handler for the Worker
+   */
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
+    const url = new URL(request.url);
 
-// Utility: Fetch static HTML from Workers Assets
-async function getStaticHtml(path: string, env: Env): Promise<Response> {
-  const asset = await env.ASSETS.get(path);
-  if (asset) {
-    return new Response(await asset.text(), {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
-  }
-  return new Response('404 Not Found', { status: 404 });
-}
+    // Handle static assets (frontend)
+    if (url.pathname === "/" || !url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
+    }
 
-// Static HTML routes
-router
-  .get('/', async ({ env }) => await getStaticHtml('index.html', env))
-  .get('/about', async ({ env }) => await getStaticHtml('about.html', env))
-  .get('/user/:id', async ({ env, params }) => {
-    const rawHtml = await getStaticHtml('user.html', env);
-    if (rawHtml.status === 404) return rawHtml;
-    
-    const htmlWithId = (await rawHtml.text()).replace('{{userId}}', params.id);
-    return new Response(htmlWithId, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
-  });
+    // API Routes
+    if (url.pathname === "/api/chat") {
+      // Handle POST requests for chat
+      if (request.method === "POST") {
+        return handleChatRequest(request, env);
+      }
 
-// Chat API route
-router.post('/api/chat', async ({ request, env }) => {
+      // Method not allowed for other request types
+      return new Response("Method not allowed", { status: 405 });
+    }
+
+    // Handle 404 for unmatched routes
+    return new Response("Not found", { status: 404 });
+  },
+} satisfies ExportedHandler<Env>;
+
+/**
+ * Handles chat API requests
+ */
+async function handleChatRequest(
+  request: Request,
+  env: Env,
+): Promise<Response> {
   try {
+    // Parse JSON request body
     const { messages = [] } = (await request.json()) as {
       messages: ChatMessage[];
     };
 
+    // Add system prompt if not present
     if (!messages.some((msg) => msg.role === "system")) {
       messages.unshift({ role: "system", content: SYSTEM_PROMPT });
     }
@@ -56,9 +76,16 @@ router.post('/api/chat', async ({ request, env }) => {
       },
       {
         returnRawResponse: true,
+        // Uncomment to use AI Gateway
+        // gateway: {
+        //   id: "YOUR_GATEWAY_ID", // Replace with your AI Gateway ID
+        //   skipCache: false,      // Set to true to bypass cache
+        //   cacheTtl: 3600,        // Cache time-to-live in seconds
+        // },
       },
     );
 
+    // Return streaming response
     return response;
   } catch (error) {
     console.error("Error processing chat request:", error);
@@ -70,14 +97,4 @@ router.post('/api/chat', async ({ request, env }) => {
       },
     );
   }
-});
-
-// 404 handler
-router.all('*', () => new Response('404 Not Found', { status: 404 }));
-
-// Main worker entry point
-export default {
-  fetch: (request: Request, env: Env, ctx: ExecutionContext) => {
-    return router.handle(request, env, ctx);
-  },
-} satisfies ExportedHandler<Env>;
+}
