@@ -75,7 +75,7 @@
         background: transparent;
         display: flex;
         flex-direction: column;
-        align-items: center; /* Center messages */
+        align-items: stretch; /* Changed to stretch for proper left/right alignment */
       }
 
       .message {
@@ -98,10 +98,14 @@
 
       .user-message {
         background: var(--user-msg-bg);
+        align-self: flex-end;
+        margin-left: auto; /* Aligns user messages to the right */
       }
 
       .assistant-message {
         background: var(--assistant-msg-bg);
+        align-self: flex-start;
+        margin-right: auto; /* Aligns assistant messages to the left */
       }
 
       .message-input {
